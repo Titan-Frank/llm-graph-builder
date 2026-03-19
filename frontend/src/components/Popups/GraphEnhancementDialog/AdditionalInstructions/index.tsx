@@ -38,6 +38,7 @@ export default function AdditionalInstructionsText({
     selectedChunk_overlap,
     selectedChunks_to_combine,
     setSelectedChunks_to_combine,
+    selectedSchemaProfile,
   } = useFileContext();
 
   const [selectedEmbeddingModel, setSelectedEmbeddingModel] = useState<EmbeddingModelOption>(() => {
@@ -291,6 +292,7 @@ export default function AdditionalInstructionsText({
       chunkOverlap: selectedChunk_overlap,
       chunksToCombine: selectedChunks_to_combine,
       instructions: additionalInstructions,
+      schemaProfile: selectedSchemaProfile,
     });
 
     console.log('handleApply - Chunk config saved to localStorage');
@@ -352,6 +354,7 @@ export default function AdditionalInstructionsText({
       chunkOverlap: originalValues.chunkOverlap,
       chunksToCombine: originalValues.chunksToCombine,
       instructions: originalValues.instructions,
+      schemaProfile: selectedSchemaProfile,
     });
     setEmbeddingConfig({
       provider: originalValues.embeddingModel.provider,

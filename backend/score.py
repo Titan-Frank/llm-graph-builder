@@ -39,7 +39,12 @@ from src.main import (
     manually_cancelled_job, populate_graph_schema_from_text, set_status_retry, update_graph, upload_file
 )
 from src.neighbours import get_neighbour_nodes
-from src.post_processing import create_entity_embedding, create_vector_fulltext_indexes, graph_schema_consolidation
+from src.post_processing import (
+    consolidate_graph_element_descriptions,
+    create_entity_embedding,
+    create_vector_fulltext_indexes,
+    graph_schema_consolidation,
+)
 from src.ragas_eval import get_additional_metrics, get_ragas_metrics
 from src.shared.common_fn import formatted_time, get_value_from_env, get_remaining_token_limits, get_user_embedding_model, change_user_embedding_model
 from src.shared.llm_graph_builder_exception import LLMGraphBuilderException
@@ -360,6 +365,11 @@ async def post_processing(credentials: Neo4jCredentials = Depends(get_neo4j_cred
             await asyncio.to_thread(graph_schema_consolidation, graph)
             api_name = 'post_processing/graph_schema_consolidation'
             logging.info(f'Updated nodes and relationship labels')
+
+        if "consolidate_element_descriptions" in tasks:
+            await asyncio.to_thread(consolidate_graph_element_descriptions, graph)
+            api_name = 'post_processing/consolidate_element_descriptions'
+            logging.info('Consolidated entity and relationship descriptions')
             
         if "enable_communities" in tasks:
             api_name = 'create_communities'
@@ -1250,4 +1260,3 @@ async def change_embedding_model(
 
 if __name__ == "__main__":
     uvicorn.run(app)
-

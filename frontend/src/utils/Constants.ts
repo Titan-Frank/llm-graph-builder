@@ -270,6 +270,11 @@ export const POST_PROCESSING_JOBS: { title: string; description: string }[] = [
                 performing similarity-based searches.`,
   },
   {
+    title: 'consolidate_element_descriptions',
+    description:
+      'Uses the LLM to consolidate repeated entity and relationship descriptions across batches and documents into more stable, reusable graph descriptions.',
+  },
+  {
     title: 'enable_communities',
     description: 'Enable community creation across entities to use GraphRAG capabilities both local and global search.',
   },

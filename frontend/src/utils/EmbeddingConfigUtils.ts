@@ -84,6 +84,7 @@ export interface ChunkConfig {
   chunkOverlap: number;
   chunksToCombine: number;
   instructions: string;
+  schemaProfile?: string;
   updated_at?: string;
 }
 
@@ -116,6 +117,7 @@ export const getChunkConfig = (): ChunkConfig | null => {
         chunkOverlap: chunkOverlapStr ? JSON.parse(chunkOverlapStr).selectedOption : 0,
         chunksToCombine: chunksToCombineStr ? JSON.parse(chunksToCombineStr).selectedOption : 0,
         instructions: instructions || '',
+        schemaProfile: localStorage.getItem('selectedSchemaProfileValue') || '',
         updated_at: new Date().toISOString(),
       };
       localStorage.setItem('chunkConfig', JSON.stringify(migratedConfig));
@@ -132,6 +134,7 @@ export const setChunkConfig = (config: {
   chunkOverlap: number;
   chunksToCombine: number;
   instructions: string;
+  schemaProfile?: string;
 }) => {
   try {
     const chunkConfig: ChunkConfig = {
@@ -139,6 +142,7 @@ export const setChunkConfig = (config: {
       chunkOverlap: config.chunkOverlap,
       chunksToCombine: config.chunksToCombine,
       instructions: config.instructions,
+      schemaProfile: config.schemaProfile || '',
       updated_at: new Date().toISOString(),
     };
 
@@ -166,4 +170,5 @@ export const clearChunkConfig = () => {
   localStorage.removeItem('selectedChunk_overlap');
   localStorage.removeItem('selectedChunks_to_combine');
   localStorage.removeItem('instructions');
+  localStorage.removeItem('selectedSchemaProfileValue');
 };

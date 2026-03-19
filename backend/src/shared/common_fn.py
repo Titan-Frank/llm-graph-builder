@@ -296,6 +296,80 @@ def save_graphDocuments_in_neo4j(graph: Neo4jGraph, graph_document_list: List[Gr
                raise
    logging.error("Failed to execute query after maximum retries due to persistent deadlocks.")
    raise RuntimeError("Query execution failed after multiple retries due to deadlock.")
+
+
+def persist_graph_description_observations(graph: Neo4jGraph, graph_document_list: List[GraphDocument]):
+  node_rows = []
+  relationship_rows = []
+
+  for graph_document in graph_document_list:
+    for node in graph_document.nodes:
+      properties = node.properties if isinstance(node.properties, dict) else {}
+      description = properties.get("description")
+      if description:
+        node_rows.append(
+          {
+            "id": str(node.id).strip(),
+            "type": str(node.type).strip(),
+            "description": str(description).strip(),
+          }
+        )
+
+    for relationship in graph_document.relationships:
+      properties = relationship.properties if isinstance(relationship.properties, dict) else {}
+      description = properties.get("description")
+      strength = properties.get("strength")
+      if description or strength not in (None, ""):
+        relationship_rows.append(
+          {
+            "source_id": str(relationship.source.id).strip(),
+            "source_type": str(relationship.source.type).strip(),
+            "relationship_type": str(relationship.type).strip(),
+            "target_id": str(relationship.target.id).strip(),
+            "target_type": str(relationship.target.type).strip(),
+            "description": str(description).strip() if description else None,
+            "strength": strength,
+          }
+        )
+
+  if node_rows:
+    query = """
+    UNWIND $rows AS row
+    MATCH (n:__Entity__ {id: row.id})
+    WHERE row.type IN labels(n)
+    SET n.description_candidates = apoc.coll.toSet(
+      coalesce(n.description_candidates, []) +
+      CASE
+        WHEN row.description IS NULL OR row.description = '' THEN []
+        ELSE [row.description]
+      END
+    )
+    """
+    execute_graph_query(graph, query, params={"rows": node_rows})
+
+  if relationship_rows:
+    query = """
+    UNWIND $rows AS row
+    MATCH (source:__Entity__ {id: row.source_id})-[r]->(target:__Entity__ {id: row.target_id})
+    WHERE row.source_type IN labels(source)
+      AND row.target_type IN labels(target)
+      AND type(r) = row.relationship_type
+    SET r.description_candidates = apoc.coll.toSet(
+          coalesce(r.description_candidates, []) +
+          CASE
+            WHEN row.description IS NULL OR row.description = '' THEN []
+            ELSE [row.description]
+          END
+        ),
+        r.strength_candidates = apoc.coll.toSet(
+          coalesce(r.strength_candidates, []) +
+          CASE
+            WHEN row.strength IS NULL OR toString(row.strength) = '' THEN []
+            ELSE [toInteger(row.strength)]
+          END
+        )
+    """
+    execute_graph_query(graph, query, params={"rows": relationship_rows})
            
 def handle_backticks_nodes_relationship_id_type(graph_document_list:List[GraphDocument]):
   for graph_document in graph_document_list:

@@ -127,6 +127,7 @@ const Content: React.FC<ContentProps> = ({
     model,
     additionalInstructions,
     setAdditionalInstructions,
+    selectedSchemaProfile,
   } = useFileContext();
   const [viewPoint, setViewPoint] = useState<
     'tableView' | 'showGraphView' | 'chatInfoView' | 'neighborView' | 'showSchemaView'
@@ -350,7 +351,8 @@ const Content: React.FC<ContentProps> = ({
         fileItem.googleProjectId,
         fileItem.language,
         fileItem.accessToken,
-        additionalInstructions
+        additionalInstructions,
+        selectedSchemaProfile
       );
       if (apiResponse?.status === 'Failed') {
         let errorobj = { error: apiResponse.error, message: apiResponse.message, fileName: apiResponse.file_name };

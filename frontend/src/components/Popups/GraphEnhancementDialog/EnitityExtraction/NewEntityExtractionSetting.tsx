@@ -1,7 +1,7 @@
 import { MouseEventHandler, useCallback, useEffect, useState, useRef, Dispatch, SetStateAction } from 'react';
 import ButtonWithToolTip from '../../../UI/ButtonWithToolTip';
 import { buttonCaptions, tooltips } from '../../../../utils/Constants';
-import { Flex, Typography, DropdownButton, Menu } from '@neo4j-ndl/react';
+import { Flex, Typography, DropdownButton, Menu, Select } from '@neo4j-ndl/react';
 import { useCredentials } from '../../../../context/UserCredentials';
 import { useFileContext } from '../../../../context/UsersFiles';
 import { OptionType, TupleType } from '../../../../types';
@@ -76,6 +76,8 @@ export default function NewEntityExtractionSetting({
     setImporterRels,
     setImporterPattern,
     importerPattern,
+    selectedSchemaProfile,
+    setSelectedSchemaProfile,
   } = useFileContext();
   const { userCredentials } = useCredentials();
   const [openGraphView, setOpenGraphView] = useState<boolean>(false);
@@ -88,6 +90,10 @@ export default function NewEntityExtractionSetting({
 
   const [isSchemaMenuOpen, setIsSchemaMenuOpen] = useState<boolean>(false);
   const schemaBtnRef = useRef<HTMLButtonElement>(null);
+  const schemaProfileOptions: OptionType[] = [
+    { label: 'No preset schema', value: '' },
+    { label: 'Education v1', value: 'education_v1' },
+  ];
 
   useEffect(() => {
     if (userDefinedPattern.length > 0) {
@@ -127,6 +133,9 @@ export default function NewEntityExtractionSetting({
     updateLocalStorage(userCredentials!, 'selectedNodeLabels', []);
     updateLocalStorage(userCredentials!, 'selectedRelationshipLabels', []);
     updateLocalStorage(userCredentials!, 'selectedPattern', []);
+    setSelectedSchemaProfile('');
+    localStorage.setItem('selectedSchemaProfileValue', '');
+    localStorage.setItem('selectedSchemaProfile', JSON.stringify({ db: userCredentials?.uri, selectedOption: '' }));
     showNormalToast(`Successfully Removed the Schema settings`);
     // Importer clear
     setImporterNodes([]);
@@ -145,6 +154,11 @@ export default function NewEntityExtractionSetting({
     updateLocalStorage(userCredentials!, 'selectedNodeLabels', nodeLables);
     updateLocalStorage(userCredentials!, 'selectedRelationshipLabels', relationshipLabels);
     updateLocalStorage(userCredentials!, 'selectedPattern', pattern);
+    localStorage.setItem('selectedSchemaProfileValue', selectedSchemaProfile);
+    localStorage.setItem(
+      'selectedSchemaProfile',
+      JSON.stringify({ db: userCredentials?.uri, selectedOption: selectedSchemaProfile })
+    );
   };
 
   const handleSchemaView = () => {
@@ -336,6 +350,31 @@ export default function NewEntityExtractionSetting({
         </span>
       </Typography>
       <div className='mt-4'>
+        <Flex flexDirection='column' gap='2' className='mb-4!'>
+          <Typography variant='label'>Schema profile</Typography>
+          <Select
+            type='select'
+            selectProps={{
+              options: schemaProfileOptions,
+              value: schemaProfileOptions.find((option) => option.value === selectedSchemaProfile) || null,
+              onChange: (option) => {
+                const selectedOption = option as OptionType | null;
+                setSelectedSchemaProfile(selectedOption?.value || '');
+              },
+              placeholder: 'Choose a schema profile',
+              isClearable: false,
+            }}
+            size='medium'
+            isFluid
+            htmlAttributes={{
+              'aria-label': 'Schema profile selection',
+            }}
+          />
+          <Typography variant='body-small'>
+            Choose `Education v1` to use the built-in textbook/curriculum schema even when no manual schema patterns are
+            selected.
+          </Typography>
+        </Flex>
         <GraphPattern
           selectedSource={selectedSource}
           selectedType={selectedType}
@@ -424,7 +463,7 @@ export default function NewEntityExtractionSetting({
                 placement='top'
                 onClick={handleFinalClear}
                 label='Clear Graph Settings'
-                disabled={!combinedPatterns.length}
+                disabled={!combinedPatterns.length && !selectedSchemaProfile}
               >
                 {buttonCaptions.clearSettings}
               </ButtonWithToolTip>
@@ -434,7 +473,7 @@ export default function NewEntityExtractionSetting({
               placement='top'
               onClick={() => handleFinalApply(combinedPatterns, combinedNodes, combinedRels)}
               label='Apply Graph Settings'
-              disabled={!combinedPatterns.length}
+              disabled={!combinedPatterns.length && !selectedSchemaProfile}
             >
               {buttonCaptions.applyGraphSchema}
             </ButtonWithToolTip>

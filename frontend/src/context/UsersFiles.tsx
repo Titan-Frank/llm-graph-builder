@@ -28,6 +28,7 @@ const FileContextProvider: FC<FileContextProviderProps> = ({ children }) => {
   const isProdEnv = import.meta.env.VITE_ENV === 'PROD';
   const selectedNodeLabelstr = localStorage.getItem('selectedNodeLabels');
   const selectedNodeRelsstr = localStorage.getItem('selectedRelationshipLabels');
+  const selectedSchemaProfilestr = localStorage.getItem('selectedSchemaProfile');
   const chunkConfig = getChunkConfig();
   const persistedQueue = localStorage.getItem('waitingQueue');
   const selectedModel = localStorage.getItem('selectedModel');
@@ -77,11 +78,15 @@ const FileContextProvider: FC<FileContextProviderProps> = ({ children }) => {
     'materialize_text_chunk_similarities',
     'enable_hybrid_search_and_fulltext_search_in_bloom',
     'materialize_entity_similarities',
+    'consolidate_element_descriptions',
     'enable_communities',
   ]);
   const [processedCount, setProcessedCount] = useState<number>(0);
   const [postProcessingVal, setPostProcessingVal] = useState<boolean>(false);
   const [additionalInstructions, setAdditionalInstructions] = useState<string>(chunkConfig?.instructions || '');
+  const [selectedSchemaProfile, setSelectedSchemaProfile] = useState<string>(
+    chunkConfig?.schemaProfile || localStorage.getItem('selectedSchemaProfileValue') || ''
+  );
   const [schemaTextPattern, setSchemaTextPattern] = useState<string[]>([]);
   const [allPatterns, setAllPatterns] = useState<string[]>([]);
   const [userDefinedPattern, setUserDefinedPattern] = useState<string[]>([]);
@@ -130,6 +135,12 @@ const FileContextProvider: FC<FileContextProviderProps> = ({ children }) => {
         setAllPatterns(generatedPatterns);
       }
     }
+    if (selectedSchemaProfilestr != null) {
+      const selectedSchemaProfile = JSON.parse(selectedSchemaProfilestr);
+      if (userCredentials?.uri === selectedSchemaProfile.db) {
+        setSelectedSchemaProfile(selectedSchemaProfile.selectedOption || '');
+      }
+    }
   }, [userCredentials]);
 
   const value: FileContextType = {
@@ -171,6 +182,8 @@ const FileContextProvider: FC<FileContextProviderProps> = ({ children }) => {
     setPostProcessingVal,
     additionalInstructions,
     setAdditionalInstructions,
+    selectedSchemaProfile,
+    setSelectedSchemaProfile,
     schemaTextPattern,
     setSchemaTextPattern,
     allPatterns,

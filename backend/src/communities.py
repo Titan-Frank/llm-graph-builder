@@ -95,7 +95,7 @@ CALL apoc.path.subgraphAll(nodes[0], {
 YIELD relationships
 RETURN c.id AS communityId,
        [n in nodes | {id: n.id, description: n.description, type: [el in labels(n) WHERE el <> '__Entity__'][0]}] AS nodes,
-       [r in relationships | {start: startNode(r).id, type: type(r), end: endNode(r).id}] AS rels
+       [r in relationships | {start: startNode(r).id, type: type(r), end: endNode(r).id, description: r.description, strength: r.strength}] AS rels
 """
 
 GET_PARENT_COMMUNITY_INFO = """
@@ -284,7 +284,8 @@ def prepare_string(community_data):
             end_node = rel['end']
             relationship_type = rel['type']
             relationship_description = f", description: {rel['description']}" if 'description' in rel and rel['description'] else ""
-            relationships_description += f"({start_node})-[:{relationship_type}]->({end_node}){relationship_description}\n"
+            relationship_strength = f", strength: {rel['strength']}" if 'strength' in rel and rel['strength'] else ""
+            relationships_description += f"({start_node})-[:{relationship_type}]->({end_node}){relationship_description}{relationship_strength}\n"
         return nodes_description + "\n" + relationships_description
     except Exception as e:
         logging.error(f"Failed to prepare string from community data: {e}")

@@ -1,14 +1,20 @@
 from neo4j import GraphDatabase
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_neo4j import Neo4jGraph
 import os
 from src.graph_query import get_graphDB_driver
 from src.shared.common_fn import load_embedding_model,execute_graph_query,get_value_from_env
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from src.shared.constants import GRAPH_CLEANUP_PROMPT
-from src.llm import get_llm
+from src.shared.constants import (
+    EDUCATION_SCHEMA_PRESET,
+    ENTITY_DESCRIPTION_SUMMARIZATION_PROMPT,
+    GRAPH_CLEANUP_PROMPT,
+    RELATIONSHIP_DESCRIPTION_SUMMARIZATION_PROMPT,
+)
+from src.llm import build_description_summary_chain, get_llm, summarize_text_list
 from src.graphDB_dataAccess import graphDBdataAccess
 import time 
 
@@ -186,3 +192,164 @@ def graph_schema_consolidation(graph):
         execute_graph_query(graph,query)
 
     return None
+
+
+def infer_graph_schema_profile(graph) -> str | None:
+    graphDb_data_Access = graphDBdataAccess(graph)
+    node_labels, _ = graphDb_data_Access.get_nodelabels_relationships()
+    normalized_labels = {label.strip().lower() for label in node_labels}
+    education_labels = {label.strip().lower() for label in EDUCATION_SCHEMA_PRESET["allowed_nodes"]}
+    if len(normalized_labels & education_labels) >= 3:
+        return EDUCATION_SCHEMA_PRESET["name"]
+    return None
+
+
+def fetch_entity_description_candidates(graph):
+    query = """
+    MATCH (n:__Entity__)
+    WHERE n.id IS NOT NULL
+    WITH n,
+         [candidate IN coalesce(n.description_candidates, []) WHERE candidate IS NOT NULL AND trim(toString(candidate)) <> ''] AS candidates
+    WITH n,
+         CASE
+           WHEN size(candidates) > 0 THEN candidates
+           WHEN n.description IS NOT NULL AND trim(toString(n.description)) <> '' THEN [toString(n.description)]
+           ELSE []
+         END AS descriptions
+    WHERE size(descriptions) > 0
+    RETURN
+      elementId(n) AS element_id,
+      n.id AS entity_id,
+      head([label IN labels(n) WHERE label <> '__Entity__']) AS entity_type,
+      descriptions
+    """
+    return execute_graph_query(graph, query)
+
+
+def fetch_relationship_description_candidates(graph):
+    query = """
+    MATCH (source:__Entity__)-[r]->(target:__Entity__)
+    WHERE NOT type(r) IN ['HAS_ENTITY', 'PART_OF', 'NEXT_CHUNK', 'SIMILAR', 'IN_COMMUNITY', 'PARENT_COMMUNITY', 'FIRST_CHUNK']
+    WITH source, r, target,
+         [candidate IN coalesce(r.description_candidates, []) WHERE candidate IS NOT NULL AND trim(toString(candidate)) <> ''] AS description_candidates,
+         [candidate IN coalesce(r.strength_candidates, []) WHERE candidate IS NOT NULL] AS strength_candidates
+    WITH source, r, target,
+         CASE
+           WHEN size(description_candidates) > 0 THEN description_candidates
+           WHEN r.description IS NOT NULL AND trim(toString(r.description)) <> '' THEN [toString(r.description)]
+           ELSE []
+         END AS descriptions,
+         CASE
+           WHEN size(strength_candidates) > 0 THEN strength_candidates
+           WHEN r.strength IS NOT NULL THEN [toInteger(r.strength)]
+           ELSE []
+         END AS strengths
+    WHERE size(descriptions) > 0 OR size(strengths) > 0
+    RETURN
+      elementId(r) AS element_id,
+      source.id AS source_id,
+      head([label IN labels(source) WHERE label <> '__Entity__']) AS source_type,
+      type(r) AS relationship_type,
+      target.id AS target_id,
+      head([label IN labels(target) WHERE label <> '__Entity__']) AS target_type,
+      descriptions,
+      strengths
+    """
+    return execute_graph_query(graph, query)
+
+
+def summarize_entity_candidate_row(chain, row, schema_profile):
+    description = summarize_text_list(
+        chain,
+        {
+            "entity_id": row["entity_id"],
+            "entity_type": row["entity_type"] or "__Entity__",
+            "schema_profile": schema_profile or "default",
+        },
+        row["descriptions"],
+    )
+    return {"element_id": row["element_id"], "description": description}
+
+
+def summarize_relationship_candidate_row(chain, row, schema_profile):
+    description = summarize_text_list(
+        chain,
+        {
+            "source_id": row["source_id"],
+            "source_type": row["source_type"] or "__Entity__",
+            "relationship_type": row["relationship_type"],
+            "target_id": row["target_id"],
+            "target_type": row["target_type"] or "__Entity__",
+            "schema_profile": schema_profile or "default",
+        },
+        row["descriptions"],
+    )
+    strengths = [int(value) for value in row.get("strengths", []) if value is not None]
+    return {
+        "element_id": row["element_id"],
+        "description": description,
+        "strength": max(strengths) if strengths else None,
+    }
+
+
+def write_entity_description_summaries(graph, rows):
+    if not rows:
+        return
+    query = """
+    UNWIND $rows AS row
+    MATCH (n) WHERE elementId(n) = row.element_id
+    SET n.description = row.description
+    """
+    execute_graph_query(graph, query, params={"rows": rows})
+
+
+def write_relationship_description_summaries(graph, rows):
+    if not rows:
+        return
+    query = """
+    UNWIND $rows AS row
+    MATCH ()-[r]->() WHERE elementId(r) = row.element_id
+    SET r.description = row.description,
+        r.strength = CASE WHEN row.strength IS NULL THEN r.strength ELSE row.strength END
+    """
+    execute_graph_query(graph, query, params={"rows": rows})
+
+
+def consolidate_graph_element_descriptions(graph, model=None):
+    schema_profile = infer_graph_schema_profile(graph)
+    model_name = model or get_value_from_env("DESCRIPTION_SUMMARIZATION_MODEL", "openai_gpt_5_mini")
+    llm, _, _ = get_llm(model_name)
+
+    entity_rows = fetch_entity_description_candidates(graph)
+    relationship_rows = fetch_relationship_description_candidates(graph)
+
+    entity_chain = build_description_summary_chain(llm, ENTITY_DESCRIPTION_SUMMARIZATION_PROMPT)
+    relationship_chain = build_description_summary_chain(llm, RELATIONSHIP_DESCRIPTION_SUMMARIZATION_PROMPT)
+    max_workers = max(1, get_value_from_env("DESCRIPTION_SUMMARIZATION_MAX_WORKERS", 4, int))
+
+    summarized_entities = []
+    summarized_relationships = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        entity_futures = [
+            executor.submit(summarize_entity_candidate_row, entity_chain, row, schema_profile)
+            for row in entity_rows
+        ]
+        relationship_futures = [
+            executor.submit(summarize_relationship_candidate_row, relationship_chain, row, schema_profile)
+            for row in relationship_rows
+        ]
+
+        for future in as_completed(entity_futures):
+            summarized_entities.append(future.result())
+
+        for future in as_completed(relationship_futures):
+            summarized_relationships.append(future.result())
+
+    write_entity_description_summaries(graph, summarized_entities)
+    write_relationship_description_summaries(graph, summarized_relationships)
+    logging.info(
+        "Consolidated descriptions for %s entities and %s relationships.",
+        len(summarized_entities),
+        len(summarized_relationships),
+    )

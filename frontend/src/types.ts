@@ -90,6 +90,7 @@ export type ExtractParams = Pick<CustomFile, 'wikiQuery' | 'model' | 'sourceUrl'
   gcs_project_id?: string;
   retry_condition: string;
   additional_instructions?: string;
+  schema_profile?: string;
 } & { [key: string]: any };
 
 export type UploadParams = {
@@ -914,6 +915,8 @@ export interface FileContextType {
   setPostProcessingVal: Dispatch<SetStateAction<boolean>>;
   additionalInstructions: string;
   setAdditionalInstructions: Dispatch<SetStateAction<string>>;
+  selectedSchemaProfile: string;
+  setSelectedSchemaProfile: Dispatch<SetStateAction<string>>;
   // all nodes and all patterns
   allPatterns: string[];
   setAllPatterns: Dispatch<SetStateAction<string[]>>;

@@ -800,8 +800,8 @@ QUERY_TO_DELETE_EXISTING_ENTITIES = """
 QUERY_TO_GET_LAST_PROCESSED_CHUNK_POSITION="""
                               MATCH (d:Document)
                               WHERE d.fileName = $filename
-                              WITH d
-                              MATCH (c:Chunk) WHERE c.embedding is null 
+                              MATCH (d)<-[:PART_OF]-(c:Chunk)
+                              WHERE c.embedding is null
                               RETURN c.id as id,c.position as position 
                               ORDER BY c.position LIMIT 1
                               """   
@@ -881,9 +881,160 @@ If any item cannot be grouped, it must remain in its own category using its orig
 Use these rules to group and name categories accurately without introducing errors or new types.
 """
 
-ADDITIONAL_INSTRUCTIONS = """Your goal is to identify and categorize entities while ensuring that specific data 
-types such as dates, numbers, revenues, and other non-entity information are not extracted as separate nodes.
-Instead, treat these as properties associated with the relevant entities."""
+ADDITIONAL_INSTRUCTIONS = """Your goal is to identify and categorize entities while building a high-recall, production-ready
+knowledge graph from the source text.
+
+Extraction rules:
+- Be exhaustive but faithful. Capture as much supported information as possible without inventing facts.
+- Prefer broad, reusable entity types and stable relationship types over overly narrow labels.
+- Resolve coreferences and aliases so the same entity is represented consistently with the most complete name found in the text.
+- Do a second mental pass before answering to check whether any important entities or relationships were missed.
+- Only create relationships when the connection is clearly supported by the text. Avoid speculative edges.
+- When available, write concise but informative descriptions for entities and relationships so downstream summarization remains useful.
+- For relationship strength, use an integer from 1 to 10, where 10 means the relationship is explicit and central in the text, and 1 means it is weak but still clearly supported.
+
+Property rules:
+- Specific data such as dates, numbers, revenues, percentages, and other non-entity values should usually be attached to the relevant entities or relationships as properties.
+- Do not extract dates, numbers, revenues, percentages, or isolated metrics as standalone nodes unless the text clearly treats them as named concepts or events.
+"""
+
+SECOND_PASS_ADDITIONAL_INSTRUCTIONS = """
+Perform a second, recall-focused extraction pass over the same text.
+- Re-read the text carefully and look for entities and relationships that are easy to miss on a first pass.
+- Pay special attention to secondary entities, implicit but clearly supported links, aliases, abbreviated mentions, roles, events, and concepts tied to the main entities.
+- Favor adding missing valid entities and relationships over repeating obvious ones, but it is acceptable if some overlap remains.
+- Keep following the same schema, faithfulness, and property rules as the first pass.
+"""
+
+EDUCATION_SCHEMA_PRESET = {
+    "name": "education_v1",
+    "allowed_nodes": [
+        "Subject",
+        "GradeLevel",
+        "StandardItem",
+        "Unit",
+        "Lesson",
+        "KnowledgePoint",
+        "Skill",
+        "LearningObjective",
+        "Activity",
+        "Assessment",
+        "Example",
+    ],
+    "allowed_relationships": [
+        ("StandardItem", "BELONGS_TO_SUBJECT", "Subject"),
+        ("Unit", "BELONGS_TO_SUBJECT", "Subject"),
+        ("Lesson", "BELONGS_TO_SUBJECT", "Subject"),
+        ("KnowledgePoint", "BELONGS_TO_SUBJECT", "Subject"),
+        ("Skill", "BELONGS_TO_SUBJECT", "Subject"),
+        ("LearningObjective", "BELONGS_TO_SUBJECT", "Subject"),
+        ("StandardItem", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("Unit", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("Lesson", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("KnowledgePoint", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("Skill", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("LearningObjective", "APPLIES_TO_GRADE", "GradeLevel"),
+        ("Lesson", "PART_OF", "Unit"),
+        ("KnowledgePoint", "PART_OF", "Lesson"),
+        ("Skill", "PART_OF", "Lesson"),
+        ("Activity", "PART_OF", "Lesson"),
+        ("Assessment", "PART_OF", "Lesson"),
+        ("Example", "PART_OF", "Lesson"),
+        ("Unit", "ALIGNS_WITH", "StandardItem"),
+        ("Lesson", "ALIGNS_WITH", "StandardItem"),
+        ("LearningObjective", "ALIGNS_WITH", "StandardItem"),
+        ("Assessment", "ALIGNS_WITH", "StandardItem"),
+        ("Lesson", "COVERS", "KnowledgePoint"),
+        ("Unit", "COVERS", "KnowledgePoint"),
+        ("Activity", "COVERS", "KnowledgePoint"),
+        ("KnowledgePoint", "REQUIRES", "KnowledgePoint"),
+        ("Skill", "REQUIRES", "Skill"),
+        ("Skill", "REQUIRES", "KnowledgePoint"),
+        ("LearningObjective", "REQUIRES", "KnowledgePoint"),
+        ("Activity", "DEVELOPS", "Skill"),
+        ("Lesson", "DEVELOPS", "Skill"),
+        ("Assessment", "ASSESSES", "KnowledgePoint"),
+        ("Assessment", "ASSESSES", "Skill"),
+        ("Assessment", "ASSESSES", "LearningObjective"),
+        ("Example", "EXEMPLIFIES", "KnowledgePoint"),
+        ("Example", "EXEMPLIFIES", "Skill"),
+        ("KnowledgePoint", "SUPPORTS", "LearningObjective"),
+        ("Skill", "SUPPORTS", "LearningObjective"),
+    ],
+}
+
+EDUCATION_ADDITIONAL_INSTRUCTIONS = """
+This corpus contains textbooks, curriculum standards, lesson materials, and assessments.
+Extract only pedagogically meaningful entities and relationships, and stay within the allowed schema.
+
+Entity typing rules:
+- Subject = discipline or course area such as mathematics, physics, language arts.
+- GradeLevel = age band, school stage, semester, or grade designation explicitly mentioned in the text.
+- StandardItem = an explicit curriculum-standard statement, requirement, competency, or benchmark.
+- Unit = unit, module, topic block, or chapter-level grouping.
+- Lesson = lesson, class session, section, or subchapter taught as a coherent instructional segment.
+- KnowledgePoint = concepts, definitions, principles, formulas, theorems, rules, factual knowledge, or named content points.
+- Skill = learner actions or methods such as compare, solve, classify, explain, interpret, model, or prove.
+- LearningObjective = explicit learning outcome, usually phrased as what learners should know, understand, or be able to do.
+- Activity = teaching task, inquiry, experiment, discussion, exercise flow, or classroom learning activity.
+- Assessment = test, quiz, rubric item, evaluation task, checkpoint, or homework explicitly used for evaluation.
+- Example = worked example, sample problem, illustrative case, or demonstration.
+
+Relationship rules:
+- Use PART_OF only for stable instructional hierarchy, not for vague topical association.
+- Use ALIGNS_WITH only when the text clearly connects content, objectives, or assessments to a curriculum standard.
+- Use REQUIRES only for prerequisite dependency.
+- Use COVERS when a lesson, unit, or activity explicitly teaches or includes a knowledge point.
+- Use SUPPORTS when a knowledge point or skill helps achieve a learning objective.
+- Use ASSESSES only when an assessment directly evaluates the target.
+- Use DEVELOPS only when a lesson or activity is clearly intended to build a skill.
+- Use EXEMPLIFIES only when an example concretely illustrates a knowledge point or skill.
+
+Extraction priorities:
+- Prefer canonical, reusable names so the same concept is represented consistently across textbook and standards documents.
+- Preserve source-grounded educational structure such as grade applicability, lesson-to-unit hierarchy, prerequisite chains, and standard alignment.
+- Do not invent entities or relations beyond the schema, even if a looser interpretation sounds plausible.
+"""
+
+EDUCATION_SECOND_PASS_ADDITIONAL_INSTRUCTIONS = """
+For this second pass, behave like a recall-oriented curriculum knowledge graph auditor.
+- Look specifically for prerequisite chains, standard alignment, grade applicability, lesson-unit hierarchy, and assessment-target links that were easy to miss.
+- Add only schema-valid entities and relationships that are clearly supported by the text.
+- Prefer recovering missing educational structure over repeating already captured entities and edges.
+"""
+
+DESCRIPTION_SUMMARIZATION_SYSTEM_PROMPT = """
+You consolidate multiple descriptions of the same knowledge-graph element into one faithful, reusable description.
+Rules:
+- Preserve only information supported by the provided descriptions.
+- Merge overlapping details and remove redundancy.
+- Prefer concise, specific wording that remains useful across documents.
+- Do not invent facts, sources, or interpretations.
+- Return only the final description text with no header or explanation.
+"""
+
+ENTITY_DESCRIPTION_SUMMARIZATION_PROMPT = """
+Summarize the following descriptions for the same entity into one concise description.
+
+Entity ID: {entity_id}
+Entity Type: {entity_type}
+Schema Profile: {schema_profile}
+
+Descriptions:
+{descriptions}
+"""
+
+RELATIONSHIP_DESCRIPTION_SUMMARIZATION_PROMPT = """
+Summarize the following descriptions for the same relationship into one concise description.
+
+Source: {source_id} ({source_type})
+Relationship: {relationship_type}
+Target: {target_id} ({target_type})
+Schema Profile: {schema_profile}
+
+Descriptions:
+{descriptions}
+"""
 
 SCHEMA_VISUALIZATION_QUERY = """
 CALL db.schema.visualization() YIELD nodes, relationships

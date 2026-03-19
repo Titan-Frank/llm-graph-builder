@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from datetime import timedelta
 from neo4j.exceptions import TransientError
 from langchain_neo4j import Neo4jGraph
 from src.shared.common_fn import create_gcs_bucket_folder_name_hashed, delete_uploaded_local_file, load_embedding_model, get_value_from_env, get_user_embedding_model
@@ -75,7 +76,6 @@ class graphDBdataAccess:
         
     def update_source_node(self, obj_source_node:sourceNode):
         try:
-
             params = {}
             if obj_source_node.file_name is not None and obj_source_node.file_name != '':
                 params['fileName'] = obj_source_node.file_name
@@ -89,8 +89,11 @@ class graphDBdataAccess:
             if obj_source_node.updated_at is not None:
                 params['updatedAt'] = obj_source_node.updated_at
 
-            if obj_source_node.processing_time is not None and obj_source_node.processing_time != 0:
-                params['processingTime'] = round(obj_source_node.processing_time.total_seconds(),2)
+            if obj_source_node.processing_time is not None:
+                if isinstance(obj_source_node.processing_time, timedelta):
+                    params['processingTime'] = round(obj_source_node.processing_time.total_seconds(),2)
+                else:
+                    params['processingTime'] = obj_source_node.processing_time
 
             if obj_source_node.node_count is not None :
                 params['nodeCount'] = obj_source_node.node_count
@@ -101,7 +104,7 @@ class graphDBdataAccess:
             if obj_source_node.model is not None and obj_source_node.model != '':
                 params['model'] = obj_source_node.model
 
-            if obj_source_node.total_chunks is not None and obj_source_node.total_chunks != 0:
+            if obj_source_node.total_chunks is not None:
                 params['total_chunks'] = obj_source_node.total_chunks
 
             if obj_source_node.is_cancelled is not None:
@@ -118,6 +121,28 @@ class graphDBdataAccess:
 
             if obj_source_node.embedding_model is not None:
                 params['embedding_model'] = obj_source_node.embedding_model
+
+            if obj_source_node.chunkNodeCount is not None:
+                params['chunkNodeCount'] = obj_source_node.chunkNodeCount
+
+            if obj_source_node.chunkRelCount is not None:
+                params['chunkRelCount'] = obj_source_node.chunkRelCount
+
+            if obj_source_node.entityNodeCount is not None:
+                params['entityNodeCount'] = obj_source_node.entityNodeCount
+
+            if obj_source_node.entityEntityRelCount is not None:
+                params['entityEntityRelCount'] = obj_source_node.entityEntityRelCount
+
+            if obj_source_node.communityNodeCount is not None:
+                params['communityNodeCount'] = obj_source_node.communityNodeCount
+
+            if obj_source_node.communityRelCount is not None:
+                params['communityRelCount'] = obj_source_node.communityRelCount
+
+            if obj_source_node.error_message is not None:
+                params['errorMessage'] = obj_source_node.error_message
+
             param= {"props":params}
             
             logging.info(f'Base Param value 1 : {param}')

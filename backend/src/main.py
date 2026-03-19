@@ -37,7 +37,8 @@ from src.make_relationships import (
 from src.shared.common_fn import (
     check_url_source, create_gcs_bucket_folder_name_hashed, create_graph_database_connection,
     delete_uploaded_local_file, get_chunk_and_graphDocument, get_value_from_env,
-    handle_backticks_nodes_relationship_id_type, last_url_segment, save_graphDocuments_in_neo4j, track_token_usage
+    handle_backticks_nodes_relationship_id_type, last_url_segment, persist_graph_description_observations,
+    save_graphDocuments_in_neo4j, track_token_usage
 )
 from src.shared.constants import (
     DELETE_ENTITIES_AND_START_FROM_BEGINNING, QUERY_TO_DELETE_EXISTING_ENTITIES,
@@ -546,7 +547,7 @@ async def processing_source(credentials, params, pages, merged_file_path=None, i
           break
         else:
           processing_chunks_start_time = time.time()
-          node_count,rel_count,latency_processed_chunk,token_usage = await processing_chunks(selected_chunks,graph,credentials,params.file_name,params.model,params.allowedNodes,params.allowedRelationship,params.chunks_to_combine,node_count, rel_count, params.additional_instructions, params.embedding_provider, params.embedding_model)
+          node_count,rel_count,latency_processed_chunk,token_usage = await processing_chunks(selected_chunks,graph,credentials,params.file_name,params.model,params.allowedNodes,params.allowedRelationship,params.chunks_to_combine,node_count, rel_count, params.additional_instructions, params.schema_profile, params.embedding_provider, params.embedding_model)
           logging.info("Token used in processing chunks: %s", token_usage)
           tokens_per_file += token_usage
           logging.info("Total token used per file: %s", tokens_per_file)
@@ -647,7 +648,7 @@ async def processing_source(credentials, params, pages, merged_file_path=None, i
     logging.error(error_message)
     raise LLMGraphBuilderException(error_message)
 
-async def processing_chunks(chunkId_chunkDoc_list,graph,credentials,file_name,model,allowedNodes,allowedRelationship, chunks_to_combine, node_count, rel_count, additional_instructions, embedding_provider, embedding_model):
+async def processing_chunks(chunkId_chunkDoc_list,graph,credentials,file_name,model,allowedNodes,allowedRelationship, chunks_to_combine, node_count, rel_count, additional_instructions, schema_profile, embedding_provider, embedding_model):
   #create vector index and update chunk node with embedding
   latency_processing_chunk = {}
   if graph is not None:
@@ -665,7 +666,15 @@ async def processing_chunks(chunkId_chunkDoc_list,graph,credentials,file_name,mo
   logging.info("Get graph document list from models")
   
   start_entity_extraction = time.time()
-  graph_documents, token_usage =  await get_graph_from_llm(model, chunkId_chunkDoc_list, allowedNodes, allowedRelationship, chunks_to_combine, additional_instructions)
+  graph_documents, token_usage =  await get_graph_from_llm(
+    model,
+    chunkId_chunkDoc_list,
+    allowedNodes,
+    allowedRelationship,
+    chunks_to_combine,
+    additional_instructions,
+    schema_profile,
+  )
   end_entity_extraction = time.time()
   elapsed_entity_extraction = end_entity_extraction - start_entity_extraction
   logging.info(f'Time taken to extract enitities from LLM Graph Builder: {elapsed_entity_extraction:.2f} seconds')
@@ -675,6 +684,7 @@ async def processing_chunks(chunkId_chunkDoc_list,graph,credentials,file_name,mo
   
   start_save_graphDocuments = time.time()
   save_graphDocuments_in_neo4j(graph, cleaned_graph_documents)
+  persist_graph_description_observations(graph, cleaned_graph_documents)
   end_save_graphDocuments = time.time()
   elapsed_save_graphDocuments = end_save_graphDocuments - start_save_graphDocuments
   logging.info(f'Time taken to save graph document in neo4j: {elapsed_save_graphDocuments:.2f} seconds')
@@ -729,7 +739,9 @@ def get_chunkId_chunkDoc_list(graph, file_name, pages, token_chunk_size, chunk_o
     chunkId_chunkDoc_list=[]
     chunks =  execute_graph_query(graph,QUERY_TO_GET_CHUNKS, params={"filename":file_name})
     
-    if chunks[0]['text'] is None or chunks[0]['text']=="" or not chunks :
+    if not chunks:
+      raise LLMGraphBuilderException(f"Chunks are not created for {file_name}. Please re-upload file or reprocess the file with option Start From Beginning.")
+    if chunks[0]['text'] is None or chunks[0]['text']=="":
       raise LLMGraphBuilderException(f"Chunks are not created for {file_name}. Please re-upload file or reprocess the file with option Start From Beginning.")    
     else:
       for chunk in chunks:
@@ -745,10 +757,12 @@ def get_chunkId_chunkDoc_list(graph, file_name, pages, token_chunk_size, chunk_o
         
         elif starting_chunk and starting_chunk[0]["position"] == len(chunkId_chunkDoc_list):
           starting_chunk =  execute_graph_query(graph,QUERY_TO_GET_LAST_PROCESSED_CHUNK_WITHOUT_ENTITY, params={"filename":file_name})
-          return len(chunks), chunkId_chunkDoc_list[starting_chunk[0]["position"] - 1:]
+          if starting_chunk:
+            return len(chunks), chunkId_chunkDoc_list[starting_chunk[0]["position"] - 1:]
+          raise LLMGraphBuilderException(f"All chunks of file {file_name} are already processed. If you want to re-process, Please start from beginning")
         
         else:
-          raise LLMGraphBuilderException(f"All chunks of file {file_name} are already processed. If you want to re-process, Please start from begnning")    
+          raise LLMGraphBuilderException(f"All chunks of file {file_name} are already processed. If you want to re-process, Please start from beginning")
       
       else:
         logging.info(f"Retry : start_from_beginning with chunks {len(chunkId_chunkDoc_list)}")    
@@ -970,6 +984,7 @@ def set_status_retry(graph, file_name, retry_condition):
     obj_source_node.status = status
     obj_source_node.retry_condition = retry_condition
     obj_source_node.is_cancelled = False
+    obj_source_node.error_message = ""
     if retry_condition == DELETE_ENTITIES_AND_START_FROM_BEGINNING or retry_condition == START_FROM_BEGINNING:
         obj_source_node.processed_chunk=0
         obj_source_node.node_count=0

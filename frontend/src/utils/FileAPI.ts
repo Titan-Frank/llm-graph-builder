@@ -38,7 +38,8 @@ export const extractAPI = async (
   gcs_project_id?: string,
   language?: string,
   access_token?: string,
-  additional_instructions?: string
+  additional_instructions?: string,
+  schema_profile?: string
 ): Promise<any> => {
   const urlExtract = `${url()}/extract`;
   const method: Method = 'post';
@@ -60,6 +61,7 @@ export const extractAPI = async (
       chunks_to_combine,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };
@@ -77,6 +79,7 @@ export const extractAPI = async (
       language,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };
@@ -97,6 +100,7 @@ export const extractAPI = async (
       access_token,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };
@@ -113,6 +117,7 @@ export const extractAPI = async (
       chunks_to_combine,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };
@@ -129,6 +134,7 @@ export const extractAPI = async (
       chunks_to_combine,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };
@@ -144,6 +150,7 @@ export const extractAPI = async (
       chunks_to_combine,
       retry_condition,
       additional_instructions,
+      schema_profile,
       embedding_provider: embeddingProvider,
       embedding_model: embeddingModel,
     };

@@ -23,6 +23,7 @@ class SourceScanExtractParams(BaseModel):
     language: Optional[str] = Field(None, description="Language")
     retry_condition: Optional[str] = Field(None, description="Retry condition")
     additional_instructions: Optional[str] = Field(None, description="Additional instructions")
+    schema_profile: Optional[str] = Field(None, description="Schema profile")
     embedding_provider: Optional[str] = Field(None, description="Embedding provider")
     embedding_model: Optional[str] = Field(None, description="Embedding model")
 
@@ -47,6 +48,7 @@ def get_source_scan_extract_params(
     language: Optional[str] = Form(None),
     retry_condition: Optional[str] = Form(None),
     additional_instructions: Optional[str] = Form(None),
+    schema_profile: Optional[str] = Form(None),
     embedding_provider: Optional[str] = Form(None),
     embedding_model: Optional[str] = Form(None),
 ) -> SourceScanExtractParams:
@@ -71,6 +73,7 @@ def get_source_scan_extract_params(
         language=language,
         retry_condition=retry_condition,
         additional_instructions=additional_instructions,
+        schema_profile=schema_profile,
         embedding_provider=embedding_provider,
         embedding_model=embedding_model
     )
