@@ -1153,42 +1153,36 @@ const FileTable: ForwardRefRenderFunction<ChildRef, FileTableProps> = (props, re
                   );
                 } else if (connectionStatus) {
                   const queueSize = queue.size();
+                  if (queueSize === 0) {
+                    return <DataGridComponents.TableResults></DataGridComponents.TableResults>;
+                  }
+
                   return (
                     <DataGridComponents.TableResults>
-                      <Flex flexDirection='row' gap='4' alignItems='center'>
-                        <Flex flexDirection='row' gap='0' alignItems='center'>
-                          <span>
-                            <InformationCircleIconOutline className='n-size-token-6' />
-                          </span>
-                          {`Large files may be partially processed up to 10K characters due to resource limit.`}
-                        </Flex>
-                        {queueSize > 0 && (
-                          <Flex
-                            flexDirection='row'
-                            gap='2'
-                            alignItems='center'
-                            className={`${isCancellingQueue ? 'opacity-50' : 'animate-pulse'} bg-palette-warning-bg-weak rounded-md px-3 py-2 border border-palette-warning-border`}
+                      <Flex
+                        flexDirection='row'
+                        gap='2'
+                        alignItems='center'
+                        className={`${isCancellingQueue ? 'opacity-50' : 'animate-pulse'} bg-palette-warning-bg-weak rounded-md px-3 py-2 border border-palette-warning-border`}
+                      >
+                        <InformationCircleIconOutline className='n-size-token-5 text-palette-warning-text' />
+                        <Typography variant='body-medium' className='font-semibold text-palette-warning-text'>
+                          {isCancellingQueue
+                            ? 'Cancelling files in waiting queue...'
+                            : `${queueSize} file${queueSize !== 1 ? 's' : ''} waiting in queue`}
+                        </Typography>
+                        {!isReadOnlyUser && (
+                          <IconButtonWithToolTip
+                            placement='right'
+                            text={isCancellingQueue ? 'Cancelling...' : 'Cancel all waiting files'}
+                            size='small'
+                            label='Cancel Queue'
+                            clean
+                            disabled={isCancellingQueue}
+                            onClick={cancelQueue}
                           >
-                            <InformationCircleIconOutline className='n-size-token-5 text-palette-warning-text' />
-                            <Typography variant='body-medium' className='font-semibold text-palette-warning-text'>
-                              {isCancellingQueue
-                                ? 'Cancelling files in waiting queue...'
-                                : `${queueSize} file${queueSize !== 1 ? 's' : ''} waiting in queue`}
-                            </Typography>
-                            {!isReadOnlyUser && (
-                              <IconButtonWithToolTip
-                                placement='right'
-                                text={isCancellingQueue ? 'Cancelling...' : 'Cancel all waiting files'}
-                                size='small'
-                                label='Cancel Queue'
-                                clean
-                                disabled={isCancellingQueue}
-                                onClick={cancelQueue}
-                              >
-                                <XMarkIconOutline className='n-size-token-4' />
-                              </IconButtonWithToolTip>
-                            )}
-                          </Flex>
+                            <XMarkIconOutline className='n-size-token-4' />
+                          </IconButtonWithToolTip>
                         )}
                       </Flex>
                     </DataGridComponents.TableResults>

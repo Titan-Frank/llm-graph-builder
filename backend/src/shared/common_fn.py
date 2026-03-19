@@ -29,6 +29,16 @@ from langchain_core.callbacks import BaseCallbackHandler
 # --- Embedding Model Helpers ---
 _embedding_instances = {}
 _embedding_locks = {}
+_embedding_dimensions = {}
+
+
+def _get_env_or_default(*keys: str, default: Any = None, data_type: type = str):
+    """Return the first non-empty environment variable from keys."""
+    for key in keys:
+        value = os.getenv(key)
+        if value is not None and value != "":
+            return convert_type(value, data_type)
+    return default
 
 def _ensure_sentence_transformer_model_downloaded(model_name: str, model_path: str):
     """
@@ -59,6 +69,67 @@ def _get_sentence_transformer_embedding(model_name: str, model_path: str = "./lo
         _embedding_instances[model_name] = HuggingFaceEmbeddings(model_name=model_path)
         logging.info(f"Embedding model {model_name} initialized.")
         return _embedding_instances[model_name]
+
+
+def _get_openai_embeddings(model_name: str):
+    """
+    Create OpenAIEmbeddings with optional support for self-hosted OpenAI-compatible endpoints.
+    """
+    base_url = _get_env_or_default(
+        "OPENAI_EMBEDDING_BASE_URL",
+        "OPENAI_BASE_URL",
+        "OPENAI_API_BASE",
+    )
+    api_key = _get_env_or_default(
+        "OPENAI_EMBEDDING_API_KEY",
+        "OPENAI_API_KEY",
+    )
+
+    kwargs = {"model": model_name}
+    if base_url:
+        kwargs["base_url"] = base_url
+        logging.info(f"Using OpenAI-compatible embedding endpoint: {base_url}")
+
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif base_url:
+        kwargs["api_key"] = "EMPTY"
+
+    return OpenAIEmbeddings(**kwargs)
+
+
+def _resolve_embedding_dimension(provider: str, model: str, embeddings, model_dimensions: dict) -> int:
+    """
+    Resolve embedding dimension from built-in mappings, env vars, or a runtime probe.
+    """
+    provider_dimensions = model_dimensions.get(provider, {})
+    if model in provider_dimensions:
+        return provider_dimensions[model]
+
+    cache_key = f"{provider}:{model}"
+    if cache_key in _embedding_dimensions:
+        return _embedding_dimensions[cache_key]
+
+    configured_dimension = _get_env_or_default(
+        f"{provider.upper().replace('-', '_')}_EMBEDDING_DIMENSION",
+        "EMBEDDING_DIMENSION",
+        default=None,
+        data_type=int,
+    )
+    if configured_dimension is not None:
+        _embedding_dimensions[cache_key] = configured_dimension
+        logging.info(
+            f"Embedding dimension for {provider}/{model} loaded from env: {configured_dimension}"
+        )
+        return configured_dimension
+
+    probe_text = _get_env_or_default("EMBEDDING_DIMENSION_PROBE_TEXT", default="dimension probe")
+    inferred_dimension = len(embeddings.embed_query(probe_text))
+    _embedding_dimensions[cache_key] = inferred_dimension
+    logging.info(
+        f"Embedding dimension for {provider}/{model} inferred at runtime: {inferred_dimension}"
+    )
+    return inferred_dimension
 
 def _get_bedrock_embeddings(model_name: str):
     """
@@ -192,22 +263,20 @@ def load_embedding_model(embedding_provider: str, embedding_model_name: str):
     provider = embedding_provider.lower()
     model = embedding_model_name
 
-    if provider not in model_dimensions or model not in model_dimensions[provider]:
-        raise ValueError(f"Unsupported provider/model: {provider}/{model}")
-
-    dimension = model_dimensions[provider][model]
-
     if provider == "openai":
-        embeddings = OpenAIEmbeddings(model=model)
+        embeddings = _get_openai_embeddings(model)
     elif provider == "gemini":
         embeddings = VertexAIEmbeddings(model=model)
     elif provider == "titan":
         embeddings = _get_bedrock_embeddings(model)
     elif provider == "sentence-transformer":
-        model_path = "./local_model" 
+        model_cache_key = hashlib.md5(model.encode("utf-8")).hexdigest()
+        model_path = f"./local_model/{model_cache_key}"
         embeddings = _get_sentence_transformer_embedding(model, model_path)
     else:
         raise ValueError(f"Unknown embedding provider: {provider}")
+
+    dimension = _resolve_embedding_dimension(provider, model, embeddings, model_dimensions)
 
     logging.info(f"Embedding: Using {provider} - {model}, Dimension: {dimension}")
     return embeddings, dimension

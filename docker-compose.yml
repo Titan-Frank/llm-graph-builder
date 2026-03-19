@@ -27,7 +27,6 @@ services:
       - DIFFBOT_API_KEY=${DIFFBOT_API_KEY-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL-}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER-}
-      - MAX_TOKEN_CHUNK_SIZE=${MAX_TOKEN_CHUNK_SIZE-}
       - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT-}
     container_name: backend

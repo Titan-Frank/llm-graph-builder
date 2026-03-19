@@ -23,12 +23,18 @@ from src.shared.common_fn import UniversalTokenUsageHandler,get_value_from_env
 
 def get_llm(model: str):
     """Retrieve the specified language model based on the model name."""
-    model = model.upper().replace('.', '_').strip()
-    env_key = f"LLM_MODEL_CONFIG_{model}"
-    env_value = get_value_from_env(env_key)
+    raw_model = model.strip()
+    model = raw_model.upper()
+    normalized_model = re.sub(r"[^A-Z0-9]+", "_", model).strip("_")
+    candidate_env_keys = [
+        f"LLM_MODEL_CONFIG_{normalized_model}",
+        f"LLM_MODEL_CONFIG_{raw_model}",
+    ]
+    env_key = candidate_env_keys[0]
+    env_value = next((os.getenv(key) for key in candidate_env_keys if os.getenv(key) not in (None, "")), None)
 
     if not env_value:
-        err = f"Environment variable '{env_key}' is not defined as per format or missing"
+        err = f"Environment variable not found for model '{raw_model}'. Tried: {', '.join(candidate_env_keys)}"
         logging.error(err)
         raise Exception(err)
     
@@ -184,6 +190,29 @@ def get_chunk_id_as_doc_metadata(chunkId_chunkDoc_list):
        for document in chunkId_chunkDoc_list
    ]
     return combined_chunk_document_list
+
+
+def build_graph_transformer(llm, allowedNodes, allowedRelationship, additional_instructions, use_structured_output):
+    return LLMGraphTransformer(
+        llm=llm,
+        node_properties=["description"] if use_structured_output else False,
+        relationship_properties=["description"] if use_structured_output else False,
+        allowed_nodes=allowedNodes,
+        allowed_relationships=allowedRelationship,
+        ignore_tool_usage=not use_structured_output,
+        additional_instructions=ADDITIONAL_INSTRUCTIONS + (additional_instructions if additional_instructions else ""),
+    )
+
+
+def is_structured_output_validation_error(error: Exception) -> bool:
+    error_message = str(error).lower()
+    return (
+        "dynamicgraph" in error_message
+        and any(
+            marker in error_message
+            for marker in ["validation error", "validation errors", "invalid json", "json_invalid", "field required"]
+        )
+    )
       
 
 async def get_graph_document_list(
@@ -196,37 +225,68 @@ async def get_graph_document_list(
     try:
         if "diffbot_api_key" in dir(llm):
             llm_transformer = llm
+            use_structured_output = False
         else:
-            try:
-                llm.with_structured_output(_Graph)
-                supports_structured_output = True
-            except Exception:
+            llm_model_name = get_llm_model_name(llm)
+            force_disable_structured_output_models = {
+                model_name.strip().lower()
+                for model_name in get_value_from_env(
+                    "DISABLE_STRUCTURED_OUTPUT_MODELS",
+                    "qwen3.5-397b",
+                    str,
+                ).split(",")
+                if model_name.strip()
+            }
+            force_disable_structured_output = llm_model_name in force_disable_structured_output_models
+
+            if force_disable_structured_output:
+                logging.info(
+                    "Structured output disabled for model '%s'; using plain-text graph extraction mode",
+                    llm_model_name,
+                )
                 supports_structured_output = False
-            if supports_structured_output and not isinstance(llm, ChatGroq):
-                logging.info("LLM supports structured output; including descriptions in graph")
-                node_properties = ["description"]
-                relationship_properties = ["description"]
-                ignore_tool_usage = False
             else:
-                logging.info("LLM does not support structured output; excluding descriptions in graph") 
-                node_properties = False
-                relationship_properties = False
-                ignore_tool_usage = True
-            
-            llm_transformer = LLMGraphTransformer(
-                llm=llm,
-                node_properties=node_properties,
-                relationship_properties=relationship_properties,
-                allowed_nodes=allowedNodes,
-                allowed_relationships=allowedRelationship,
-                ignore_tool_usage=ignore_tool_usage,
-                additional_instructions=ADDITIONAL_INSTRUCTIONS+ (additional_instructions if additional_instructions else "")
+                try:
+                    llm.with_structured_output(_Graph)
+                    supports_structured_output = True
+                except Exception:
+                    supports_structured_output = False
+            use_structured_output = supports_structured_output and not isinstance(llm, ChatGroq)
+            if use_structured_output:
+                logging.info("LLM supports structured output; including descriptions in graph")
+            else:
+                logging.info("LLM does not support structured output; excluding descriptions in graph")
+
+            llm_transformer = build_graph_transformer(
+                llm,
+                allowedNodes,
+                allowedRelationship,
+                additional_instructions,
+                use_structured_output,
             )
-        
-        if isinstance(llm,DiffbotGraphTransformer):
-            graph_document_list = llm_transformer.convert_to_graph_documents(combined_chunk_document_list)
-        else:
-            graph_document_list = await llm_transformer.aconvert_to_graph_documents(combined_chunk_document_list)
+
+        try:
+            if isinstance(llm,DiffbotGraphTransformer):
+                graph_document_list = llm_transformer.convert_to_graph_documents(combined_chunk_document_list)
+            else:
+                graph_document_list = await llm_transformer.aconvert_to_graph_documents(combined_chunk_document_list)
+        except Exception as error:
+            if not isinstance(llm, DiffbotGraphTransformer) and use_structured_output and is_structured_output_validation_error(error):
+                logging.warning(
+                    "Structured output parsing failed for model '%s'; retrying graph extraction without structured output",
+                    get_llm_model_name(llm),
+                    exc_info=True,
+                )
+                llm_transformer = build_graph_transformer(
+                    llm,
+                    allowedNodes,
+                    allowedRelationship,
+                    additional_instructions,
+                    False,
+                )
+                graph_document_list = await llm_transformer.aconvert_to_graph_documents(combined_chunk_document_list)
+            else:
+                raise
     except Exception as e:
        logging.error(f"Error in graph transformation: {e}", exc_info=True)
        raise LLMGraphBuilderException(f"Graph transformation failed: {str(e)}")

@@ -706,8 +706,6 @@ def get_chunkId_chunkDoc_list(graph, file_name, pages, token_chunk_size, chunk_o
       token_chunk_size (int): Token size for chunking.
       chunk_overlap (int): Overlap size for chunks.
       retry_condition (str): Condition for retrying chunk creation.
-      email (str): User email for tracking.
-
   Returns:
       tuple: (total_chunks, chunkId_chunkDoc_list)
   """
@@ -723,7 +721,7 @@ def get_chunkId_chunkDoc_list(graph, file_name, pages, token_chunk_size, chunk_o
           text = text.replace(j, '')
       pages[i]=Document(page_content=str(text), metadata=pages[i].metadata)
     create_chunks_obj = CreateChunksofDocument(pages, graph)
-    chunks = create_chunks_obj.split_file_into_chunks(token_chunk_size, chunk_overlap, email)
+    chunks = create_chunks_obj.split_file_into_chunks(token_chunk_size, chunk_overlap)
     chunkId_chunkDoc_list = create_relation_between_chunks(graph,file_name,chunks)
     return len(chunks), chunkId_chunkDoc_list
   

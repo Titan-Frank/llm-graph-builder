@@ -5,7 +5,6 @@ from langchain_neo4j import Neo4jGraph
 from langchain_text_splitters import TokenTextSplitter
 
 from src.document_sources.youtube import get_calculated_timestamps, get_chunks_with_timestamps
-from src.shared.common_fn import get_value_from_env
 
 logging.basicConfig(format="%(asctime)s - %(message)s", level="INFO")
 
@@ -26,24 +25,18 @@ class CreateChunksofDocument:
         self.pages = pages
         self.graph = graph
 
-    def split_file_into_chunks(self, token_chunk_size: int, chunk_overlap: int, email: str):
+    def split_file_into_chunks(self, token_chunk_size: int, chunk_overlap: int):
         """
         Split a list of documents (pages) into chunks of fixed token size.
 
         Args:
             token_chunk_size (int): Number of tokens per chunk.
             chunk_overlap (int): Number of tokens to overlap between chunks.
-            email (str): User email for chunk limiting logic.
-
         Returns:
             list[Document]: List of langchain Document chunks.
         """
         logging.info("Split file into smaller chunks")
         text_splitter = TokenTextSplitter(chunk_size=token_chunk_size, chunk_overlap=chunk_overlap)
-        max_token_chunk_size = get_value_from_env("MAX_TOKEN_CHUNK_SIZE", 10000, "int")
-        chunk_to_be_created = int(max_token_chunk_size / token_chunk_size)
-        normalized_email = (email or "").strip().lower() or None
-        is_neo4j_user = bool(normalized_email and normalized_email.endswith("@neo4j.com"))
 
         chunks = []
         first_metadata = self.pages[0].metadata
@@ -72,8 +65,4 @@ class CreateChunksofDocument:
             chunks = text_splitter.split_documents(self.pages)
 
         logging.info('Total chunks created: %d', len(chunks))
-        if not is_neo4j_user and len(chunks) > chunk_to_be_created:
-            chunks = chunks[:chunk_to_be_created]
-            logging.info('Non Neo4j user - limiting chunks to %d from %d', chunk_to_be_created, len(chunks))
-
         return chunks

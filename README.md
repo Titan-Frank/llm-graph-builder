@@ -250,7 +250,6 @@ gcloud run deploy dev-backend \
 | DUPLICATE_SCORE_VALUE   | Optional          | 0.97          | Node score value to match duplicate nodes                                                        |
 | EFFECTIVE_SEARCH_RATIO  | Optional          | 1             | Ratio used for effective search calculations                                                     |
 | GRAPH_CLEANUP_MODEL     | Optional          | openai_gpt_5_mini | Model name to clean up graph in post processing                                            |
-| MAX_TOKEN_CHUNK_SIZE    | Optional          | 10000         | Maximum token size to process file content                                                       |
 | YOUTUBE_TRANSCRIPT_PROXY| Mandatory         |               | Proxy key to process YouTube videos for getting transcripts                                      |
 | IS_EMBEDDING           | Optional           | true          | Flag to enable text embedding                                                                    |
 | KNN_MIN_SCORE          | Optional           | 0.8           | Minimum score for KNN algorithm                                                                  |
