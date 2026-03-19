@@ -43,6 +43,7 @@ from src.post_processing import (
     consolidate_graph_element_descriptions,
     create_entity_embedding,
     create_vector_fulltext_indexes,
+    deduplicate_parallel_relationships,
     graph_schema_consolidation,
 )
 from src.ragas_eval import get_additional_metrics, get_ragas_metrics
@@ -360,6 +361,11 @@ async def post_processing(credentials: Neo4jCredentials = Depends(get_neo4j_cred
             await asyncio.to_thread(create_entity_embedding, graph, embedding_provider, embedding_model)
             api_name = 'post_processing/create_entity_embedding'
             logging.info(f'Entity Embeddings created')
+
+        if "deduplicate_parallel_relationships" in tasks:
+            await asyncio.to_thread(deduplicate_parallel_relationships, graph)
+            api_name = 'post_processing/deduplicate_parallel_relationships'
+            logging.info('Deduplicated parallel relationships')
 
         if "graph_schema_consolidation" in tasks :
             await asyncio.to_thread(graph_schema_consolidation, graph)

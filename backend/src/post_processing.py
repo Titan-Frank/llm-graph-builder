@@ -194,6 +194,73 @@ def graph_schema_consolidation(graph):
     return None
 
 
+def deduplicate_parallel_relationships(graph):
+    query = """
+    MATCH (source:__Entity__)-[r]->(target:__Entity__)
+    WHERE NOT type(r) IN ['HAS_ENTITY', 'PART_OF', 'NEXT_CHUNK', 'SIMILAR', 'IN_COMMUNITY', 'PARENT_COMMUNITY', 'FIRST_CHUNK']
+    WITH source, target, type(r) AS relationship_type, collect(r) AS relationships
+    WHERE size(relationships) > 1
+    WITH relationships,
+         reduce(
+           description_candidates = [],
+           rel IN relationships |
+           description_candidates +
+           coalesce(rel.description_candidates, []) +
+           CASE
+             WHEN rel.description IS NULL OR trim(toString(rel.description)) = '' THEN []
+             ELSE [toString(rel.description)]
+           END
+         ) AS merged_description_candidates,
+         reduce(
+           strength_candidates = [],
+           rel IN relationships |
+           strength_candidates +
+           coalesce(rel.strength_candidates, []) +
+           CASE
+             WHEN rel.strength IS NULL OR trim(toString(rel.strength)) = '' THEN []
+             ELSE [toInteger(rel.strength)]
+           END
+         ) AS merged_strength_candidates
+    WITH head(relationships) AS primary_relationship,
+         tail(relationships) AS duplicate_relationships,
+         apoc.coll.toSet([candidate IN merged_description_candidates WHERE candidate IS NOT NULL AND trim(toString(candidate)) <> '']) AS deduped_description_candidates,
+         apoc.coll.toSet([candidate IN merged_strength_candidates WHERE candidate IS NOT NULL]) AS deduped_strength_candidates
+    SET primary_relationship.description_candidates =
+          CASE
+            WHEN size(deduped_description_candidates) = 0 THEN coalesce(primary_relationship.description_candidates, [])
+            ELSE deduped_description_candidates
+          END,
+        primary_relationship.strength_candidates =
+          CASE
+            WHEN size(deduped_strength_candidates) = 0 THEN coalesce(primary_relationship.strength_candidates, [])
+            ELSE deduped_strength_candidates
+          END,
+        primary_relationship.strength =
+          CASE
+            WHEN size(deduped_strength_candidates) = 0 THEN primary_relationship.strength
+            ELSE reduce(max_strength = null, candidate IN deduped_strength_candidates |
+              CASE
+                WHEN max_strength IS NULL OR candidate > max_strength THEN candidate
+                ELSE max_strength
+              END
+            )
+          END
+    FOREACH (relationship IN duplicate_relationships | DELETE relationship)
+    RETURN count(primary_relationship) AS deduplicated_relationship_groups,
+           sum(size(duplicate_relationships)) AS deleted_relationships
+    """
+    result = execute_graph_query(graph, query)
+    if result:
+        logging.info(
+            "Deduplicated %s relationship groups and deleted %s duplicate relationships.",
+            result[0].get("deduplicated_relationship_groups", 0),
+            result[0].get("deleted_relationships", 0),
+        )
+    else:
+        logging.info("No duplicate relationships found to deduplicate.")
+    return result
+
+
 def infer_graph_schema_profile(graph) -> str | None:
     graphDb_data_Access = graphDBdataAccess(graph)
     node_labels, _ = graphDb_data_Access.get_nodelabels_relationships()

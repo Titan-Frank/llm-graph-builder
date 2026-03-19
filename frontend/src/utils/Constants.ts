@@ -270,6 +270,11 @@ export const POST_PROCESSING_JOBS: { title: string; description: string }[] = [
                 performing similarity-based searches.`,
   },
   {
+    title: 'deduplicate_parallel_relationships',
+    description:
+      'Merges duplicate relationships that share the same source node, relationship type, and target node, reducing visual clutter in the graph while preserving collected descriptions and strengths.',
+  },
+  {
     title: 'consolidate_element_descriptions',
     description:
       'Uses the LLM to consolidate repeated entity and relationship descriptions across batches and documents into more stable, reusable graph descriptions.',
