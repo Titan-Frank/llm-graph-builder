@@ -57,6 +57,15 @@ load_dotenv(override=True)
 logger = CustomLogger()
 CHUNK_DIR = os.path.join(os.path.dirname(__file__), "chunks")
 MERGED_DIR = os.path.join(os.path.dirname(__file__), "merged_files")
+POST_PROCESSING_TASK_ORDER = [
+    "materialize_text_chunk_similarities",
+    "enable_hybrid_search_and_fulltext_search_in_bloom",
+    "materialize_entity_similarities",
+    "graph_schema_consolidation",
+    "deduplicate_parallel_relationships",
+    "consolidate_element_descriptions",
+    "enable_communities",
+]
 
 
 def sanitize_filename(filename: str) -> str:
@@ -89,6 +98,23 @@ def healthy() -> bool:
 def sick() -> bool:
     """Return False for health check."""
     return False
+
+
+def order_post_processing_tasks(tasks: list[str]) -> list[str]:
+    ordered = []
+    seen = set()
+
+    for task_name in POST_PROCESSING_TASK_ORDER:
+        if task_name in tasks and task_name not in seen:
+            ordered.append(task_name)
+            seen.add(task_name)
+
+    for task_name in tasks:
+        if task_name not in seen:
+            ordered.append(task_name)
+            seen.add(task_name)
+
+    return ordered
 
 
 class CustomGZipMiddleware:
@@ -343,7 +369,7 @@ async def post_processing(credentials: Neo4jCredentials = Depends(get_neo4j_cred
             if not getattr(credentials, "email", None) or not getattr(credentials, "uri", None):
                 error_message = "Authentication required: Your session is missing required credentials. Please log in again to continue."
                 raise Exception(error_message)
-        tasks = set(map(str.strip, json.loads(tasks)))
+        tasks = order_post_processing_tasks([task.strip() for task in json.loads(tasks)])
         api_name = 'post_processing'
         count_response = []
         start = time.time()

@@ -50,7 +50,7 @@ export default function PostProcessingCheckList() {
                     isChecked={isChecked}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setPostProcessingTasks((prev) => [...prev, job.title]);
+                        setPostProcessingTasks((prev) => (prev.includes(job.title) ? prev : [...prev, job.title]));
                       } else {
                         setPostProcessingTasks((prev) => prev.filter((s) => s !== job.title));
                       }

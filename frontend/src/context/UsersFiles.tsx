@@ -78,6 +78,7 @@ const FileContextProvider: FC<FileContextProviderProps> = ({ children }) => {
     'materialize_text_chunk_similarities',
     'enable_hybrid_search_and_fulltext_search_in_bloom',
     'materialize_entity_similarities',
+    'graph_schema_consolidation',
     'deduplicate_parallel_relationships',
     'consolidate_element_descriptions',
     'enable_communities',
